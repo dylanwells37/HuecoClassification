@@ -17,6 +17,7 @@ class gaNetwork:
         self.input_shape = input_shape
         self.output_shape = output_shape
         
+        
     def build_model(self):
         model = keras.models.Sequential()
         for i in range(self.n_layers):
@@ -34,11 +35,12 @@ class gaNetwork:
         
     def train_model(self, x_train, y_train, 
                     epochs, batch_size, 
-                    validation_data, verbose=1):
+                    validation_data, out_path,
+                    verbose=0):
         
-        callbacks = [keras.callbacks.EarlyStopping(monitor='val_loss', patience=3),
-                    keras.callbacks.ModelCheckpoint(filepath=f'generation_models/best_model_{self.id}.h5', 
-                                                     monitor='loss', 
+        callbacks = [keras.callbacks.EarlyStopping(monitor='val_accuracy', patience=3),
+                    keras.callbacks.ModelCheckpoint(filepath=f'{out_path}/model_{self.id}.h5', 
+                                                     monitor='val_accuracy', 
                                                      save_best_only=True)]
         
         self.model.fit(x_train, y_train, epochs=epochs, 
@@ -47,12 +49,17 @@ class gaNetwork:
                        callbacks=callbacks)
 
         self.history = self.model.history.history
-        
-        # print the keys of the history dictionary
-        print(self.history.keys())
-        
         self.best_val_acc = np.max(self.history['val_accuracy'])
+
     
+    def write_to_csv(self, filepath, open_mode='a'):
+        with open(filepath, open_mode) as f:
+            genes = self.get_genes()
+            genes = [str(gene) for gene in genes]
+            for gene in genes:
+                f.write(f'{gene},')
+            f.write(f'{self.best_val_acc}\n')
+            
     
     def get_model(self):
         return self.model

@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import pickle
 import time
+import argparse
 
 from copy import deepcopy
 from pathlib import Path
@@ -9,7 +10,10 @@ from network import gaNetwork
 
 class GA:
     def __init__(self, n_population, n_crossover, n_mutate,
-                 input_shape, output_shape):
+                 input_shape, output_shape, run_id):
+        self.run = run_id
+        # make the run directory
+        Path(f"run_data/{self.run}/networks").mkdir(parents=True, exist_ok=True)
         self.n_pop = n_population
         self.n_crossover = n_crossover
         self.n_mutate = n_mutate
@@ -60,7 +64,8 @@ class GA:
                 print(f"Training network {network.id}...")
             network.build_model()
             network.train_model(x_train, y_train, epochs, 
-                                batch_size, validation_data)
+                                batch_size, validation_data,
+                                f"run_data/{self.run}/networks")
             if verbose == 1:
                 time_end = time.time()
                 print(f"Network {network.id} trained in {time_end - time_start} seconds")
@@ -71,10 +76,12 @@ class GA:
         for network in self.population:
             fitness = network.get_best_val_acc()
             fit_list.append(fitness)
+            network.write_to_csv(f"run_data/{self.run}/ga_out.csv")
+        
         self.fitnesses = fit_list
         self.genfitnesses.append(np.max(fit_list))
         
-        with open('tracker.txt', 'a') as f:
+        with open(f"run_data/{self.run}/tracker.txt", 'a') as f:
             f.write(f"{np.max(fit_list)}\n")
 
         if np.max(fit_list) > self.best_fitness:
@@ -83,39 +90,40 @@ class GA:
             self.best_history = self.best_network.get_history()
             self.best_model = self.best_network.get_model()
             # save the best model
-            self.best_model.save('best_model.h5')
-            with open('best_txt.txt', 'wb') as f:
-                # Write the genes of the best network to a file
-                genes = self.best_network.get_genes()
-                for gene in genes:
-                    f.write(f"{gene}\n")
-        
+            self.best_model.save(f"run_data/{self.run}/best_model.h5")
+            self.best_network.write_to_csv(f"run_data/{self.run}/best_network.csv", "w")
+
     
     def select_parents(self):
-        parent_no = self.n_crossover * 2 + self.n_mutate
+        parent_no = self.n_crossover + self.n_mutate
         roulette_no = int(parent_no * (1/4))
         rank_no = int(parent_no * (1/2))
         tournament_no = parent_no - roulette_no - rank_no
         
-        parent_ids = []
+        parent_ids = np.array([])
         
-        parent_ids.append(self.roulette_selection(roulette_no))
-        parent_ids.append(self.rank_selection(rank_no))
-        parent_ids.append(self.tournament_selection(tournament_no))
-            
+        parent_ids = np.append(parent_ids, self.roulette_selection(roulette_no))
+        parent_ids = np.append(parent_ids, self.rank_selection(rank_no))
+        parent_ids = np.append(parent_ids, self.tournament_selection(tournament_no))
+        
+        parent_ids = [int(id) for id in parent_ids]
+        
         return parent_ids
         
     
-    def torunament_selection(self, tournament_no):
+    def tournament_selection(self, tournament_no):
         # randomly select 7 percent of the population and select the best
         # individual from that group
         parent_ids = []
         for i in range(tournament_no):
-            tournament = np.random.choice(self.population, int(self.n_pop * 0.07))
+            if int(self.n_pop * 0.07) == 0:
+                tournament = np.random.choice(self.population, 2)
+            else:
+                tournament = np.random.choice(self.population, int(self.n_pop * 0.07))
             fitnesses = [network.get_best_val_acc() for network in tournament]
             parent_ids.append(tournament[np.argmax(fitnesses)].id)
             
-        return parent_ids
+        return np.array(parent_ids)
         
     
     def roulette_selection(self, roulette_no):
@@ -127,7 +135,7 @@ class GA:
         for i in range(roulette_no):
             parent_ids.append(np.random.choice(self.population, p=fitnesses).id)
         
-        return parent_ids
+        return np.array(parent_ids)
     
     
     def rank_selection(self, rank_no):
@@ -140,7 +148,7 @@ class GA:
             index = np.random.choice(indices, p=p_array)
             parent_ids.append(self.population[index].id)
         
-        return parent_ids
+        return np.array(parent_ids)
             
     
     def crossover(self, parent_ids):
@@ -148,7 +156,7 @@ class GA:
         # repeat until the desired number of offspring is reached
         offspring = []
         
-        for i in range(self.n_crossover):
+        for i in range(int(self.n_crossover/2)):
             # check if the set of parent_ids has only one element,
             # then we can't perform crossover
             set_ids = set(parent_ids)
@@ -160,7 +168,6 @@ class GA:
             
             while parent1 == parent2:
                 parent2 = np.random.choice(parent_ids)
-
                 
             # choose a gene to swap
             chosen_gene = np.random.randint(0, self.gene_count)
@@ -215,19 +222,21 @@ class GA:
     def next_generation(self):
         parent_ids = self.select_parents()
         offspring = []
-        offspring, parent_ids, extra_parents = self.crossover(parent_ids)
-        offspring, parent_ids = self.mutation(parent_ids, extra_parents)
+        print("Performing Crossover")
+        c_offspring, parent_ids, extra_parents = self.crossover(parent_ids)
+        print("Performing Mutation")
+        m_offspring, parent_ids = self.mutation(parent_ids, extra_parents)
         
         # if the number of offspring is less than the desired number,
         # then we need to create more offspring
-        difference = self.n_pop - len(offspring)
-        new_ids = self.torunament_selection(difference)
-        if len(new_ids) > 0:
-            offspring += [self.population[id] for id in new_ids]
-            
+        print("Compiling offpsring")
+        offspring = c_offspring + m_offspring
+        
+        print(len(offspring))
+        
         for i in range(self.n_pop):
             offspring[i].id = i
-            
+
         self.population = offspring
     
     
@@ -247,8 +256,8 @@ class GA:
         return self.genfitnesses
 
 
-# main
-if __name__ == "__main__":
+
+def main(g):
     # load the dataset
     # Load data
     # Load data
@@ -283,7 +292,7 @@ if __name__ == "__main__":
 
 
 
-    genetic_algorithm = GA(100, 80, 20, (141,), 11)
+    genetic_algorithm = GA(100, 80, 20, (141,), 11, g.run_name)
     
     generation = 0
     stop_gen = 1000
@@ -294,8 +303,8 @@ if __name__ == "__main__":
         print(f"Generation {generation}")
         start = time.time()
         print("Training population")
-        genetic_algorithm.train_population(X_train, y_train, 50, 16, 
-                                           (X_rest, y_rest))
+        genetic_algorithm.train_population(X_train, y_train, 50, 256, 
+                                           (X_rest, y_rest), verbose=1)
         print("Evaluating population")
         genetic_algorithm.evaluate_population()
         print("Creating next generation")
@@ -308,7 +317,15 @@ if __name__ == "__main__":
         print(f"Generation {generation} complete in {end - start} seconds")
         
 
+def parse_args():
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument('run_name', type=str, default='test')
+    args = argparser.parse_args()
+    return args
 
     
-        
+# main
+if __name__ == "__main__":
+    g = parse_args()
+    main(g)
     
