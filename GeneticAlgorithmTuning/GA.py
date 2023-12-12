@@ -3,6 +3,7 @@ import pandas as pd
 import pickle
 import time
 import argparse
+import sklearn
 
 from copy import deepcopy
 from pathlib import Path
@@ -40,6 +41,7 @@ class GA:
         self.genfitnesses = []
         
     def initialize_population(self):
+        '''Initialize the starting population randomly'''
         for i in range(self.n_pop):
             #n_layers = np.random.choice(self.parameters['n_layers'])
             n_layers = self.n_layers
@@ -58,6 +60,7 @@ class GA:
     
     def train_population(self, x_train, y_train, epochs, batch_size, 
                          validation_data, verbose=0):
+        '''Train all networks in the population'''
         for network in self.population:
             if verbose == 1:
                 time_start = time.time()
@@ -72,6 +75,7 @@ class GA:
     
     
     def evaluate_population(self):
+        '''Evaluate fitness of the population'''
         fit_list = []
         for network in self.population:
             fitness = network.get_best_val_acc()
@@ -95,6 +99,7 @@ class GA:
 
     
     def select_parents(self):
+        '''Choose parents to reproduce'''
         parent_no = self.n_crossover + self.n_mutate
         roulette_no = int(parent_no * (1/4))
         rank_no = int(parent_no * (1/2))
@@ -112,8 +117,7 @@ class GA:
         
     
     def tournament_selection(self, tournament_no):
-        # randomly select 7 percent of the population and select the best
-        # individual from that group
+        '''Select Parents based on a tournament'''
         parent_ids = []
         for i in range(tournament_no):
             if int(self.n_pop * 0.07) == 0:
@@ -127,7 +131,7 @@ class GA:
         
     
     def roulette_selection(self, roulette_no):
-        
+        '''Select Parents based on roulette probability'''
         parent_ids = []
         fitnesses = np.array(self.fitnesses)
         fitnesses = fitnesses / np.sum(fitnesses)
@@ -139,6 +143,7 @@ class GA:
     
     
     def rank_selection(self, rank_no):
+        '''Select Parents based on rank probability'''
         parent_ids = []
         fitnesses = np.array(self.fitnesses)
         indices = np.argsort(fitnesses)
@@ -152,13 +157,12 @@ class GA:
             
     
     def crossover(self, parent_ids):
-        # randomly select two parents and perform crossover
-        # repeat until the desired number of offspring is reached
+        '''Select two of chosen parents and swap a gene to create offspring'''
         offspring = []
         
         for i in range(int(self.n_crossover/2)):
             # check if the set of parent_ids has only one element,
-            # then we can't perform crossover
+            # then we can't perform crossover, rollover to mutation
             set_ids = set(parent_ids)
             if len(set_ids) == 1:
                 return offspring, parent_ids, self.n_crossover - i
@@ -188,8 +192,8 @@ class GA:
     
     
     def mutation(self, parent_ids, extra_parents):
-        # randomly select a parent and mutate it
-        # repeat until the desired number of offspring is reached
+        '''Selecet a chosen parent and change one of its genes 
+        to create offspring'''
         offspring = []
         
         for i in range(self.n_mutate + extra_parents):
@@ -220,19 +224,19 @@ class GA:
         
         
     def next_generation(self):
+        '''Create the next generation of offspring to replace
+        the current population'''
         parent_ids = self.select_parents()
         offspring = []
+        
         print("Performing Crossover")
         c_offspring, parent_ids, extra_parents = self.crossover(parent_ids)
+        
         print("Performing Mutation")
         m_offspring, parent_ids = self.mutation(parent_ids, extra_parents)
         
-        # if the number of offspring is less than the desired number,
-        # then we need to create more offspring
         print("Compiling offpsring")
         offspring = c_offspring + m_offspring
-        
-        print(len(offspring))
         
         for i in range(self.n_pop):
             offspring[i].id = i
@@ -259,21 +263,19 @@ class GA:
 
 def main(g):
     # load the dataset
-    # Load data
-    # Load data
     cwd = Path.cwd()
     moondf = pickle.load(open(cwd / '..' / 'raw_data' / 'moonGen_scrape_2016_with_labels', 'rb'))
-    # change the grade column from a number 4 - 14 to a list of 11 binary values
+    
+    # One Hot encode data
     y_temp = moondf['grade'].values
     moondf['grade'] = moondf['grade'].apply(lambda x: [1 if i == x else 0 for i in range(4, 15)])
-    # one hot encode the grade column
     grade_cols = ['V_' + str(i) for i in range(4, 15)]
     moondf[grade_cols] = pd.DataFrame(moondf['grade'].to_list(), index=moondf.index)
     y = moondf[grade_cols].values
     X = moondf.drop(columns=grade_cols, axis=1)
     X = X.drop(["is_benchmark", "repeats", "grade"], axis=1).values
     
-
+    # Create train with more even sampling of grades
     X_train = np.zeros((0, 141))
     y_train = np.zeros((0, 11))
     X_rest = np.zeros((0, 141))
@@ -290,16 +292,20 @@ def main(g):
         X_rest = np.concatenate((X_rest, X[y_temp == i][temp_size:]))
         y_rest = np.concatenate((y_rest, y[y_temp == i][temp_size:]))
 
+    X_train, y_train = sklearn.utils.shuffle(X_train, y_train, random_state=0)
+    X_rest, y_rest = sklearn.utils.shuffle(X_rest, y_rest, random_state=0)
 
-
-    genetic_algorithm = GA(100, 80, 20, (141,), 11, g.run_name)
+    # Initialize the GA
     
+    genetic_algorithm = GA(100, 80, 20, (141,), 11, g.run_name)
     generation = 0
     stop_gen = 1000
+    
     print("Initializing population")
     genetic_algorithm.initialize_population()
     
     while generation < stop_gen:
+        # Run the GA until my laptop dies :)
         print(f"Generation {generation}")
         start = time.time()
         print("Training population")
@@ -323,8 +329,7 @@ def parse_args():
     args = argparser.parse_args()
     return args
 
-    
-# main
+
 if __name__ == "__main__":
     g = parse_args()
     main(g)
