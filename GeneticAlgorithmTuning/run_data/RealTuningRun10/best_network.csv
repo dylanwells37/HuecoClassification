@@ -1,0 +1,1 @@
+256,512,128,512,128,512,256,256,tanh,relu,relu,relu,softmax,tanh,relu,tanh,rmsprop,categorical_crossentropy,0.5791395902633667

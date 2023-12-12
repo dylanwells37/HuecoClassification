@@ -19,6 +19,7 @@ class gaNetwork:
         
         
     def build_model(self):
+        '''Build the model'''
         model = keras.models.Sequential()
         for i in range(self.n_layers):
             if i == 0:
@@ -37,7 +38,7 @@ class gaNetwork:
                     epochs, batch_size, 
                     validation_data, out_path,
                     verbose=0):
-        
+        '''Train the model'''
         callbacks = [keras.callbacks.EarlyStopping(monitor='val_accuracy', patience=3),
                     keras.callbacks.ModelCheckpoint(filepath=f'{out_path}/model_{self.id}.h5', 
                                                      monitor='val_accuracy', 
@@ -53,6 +54,7 @@ class gaNetwork:
 
     
     def write_to_csv(self, filepath, open_mode='a'):
+        '''Write the model's genes to a csv file'''
         with open(filepath, open_mode) as f:
             genes = self.get_genes()
             genes = [str(gene) for gene in genes]
@@ -74,6 +76,7 @@ class gaNetwork:
 
 
     def get_gene(self, index):
+        '''Get the gene at a specific index'''
         if index < self.n_layers:
             return self.n_neurons[index]
         elif index < self.n_layers * 2:
@@ -88,6 +91,7 @@ class gaNetwork:
     
     
     def set_gene(self, index, value):
+        '''Set the gene at a specific index'''
         if index < self.n_layers:
             self.n_neurons[index] = value
         elif index < self.n_layers * 2:
@@ -102,5 +106,6 @@ class gaNetwork:
         
     
     def get_genes(self):
+        '''Get a list of all the model's genes'''
         return self.n_neurons + self.activation + [self.optimizer, self.loss]
     
